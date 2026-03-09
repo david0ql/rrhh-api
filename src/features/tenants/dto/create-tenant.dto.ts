@@ -12,6 +12,16 @@ export class CreateTenantDto {
   @Length(2, 120)
   name!: string;
 
+  @IsString()
+  @IsNotEmpty()
+  @Length(2, 180)
+  legalName!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Length(3, 40)
+  taxId!: string;
+
   @IsOptional()
   @IsString()
   @Length(2, 60)

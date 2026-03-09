@@ -11,10 +11,25 @@ type ConceptRow = {
   value: number;
 };
 
+type TenantPdfData = {
+  slug?: string;
+  name?: string;
+  legalName?: string;
+  taxId?: string;
+};
+
 const PAGE_WIDTH = 595;
 const MARGIN = 40;
 const HEADER_H = 92;
 const HEADER_GAP = 12;
+
+const TENANT_HEADER_FALLBACKS: Record<
+  string,
+  { legalName: string; taxId: string }
+> = {
+  amaya: { legalName: 'AMAYA SOLUCIONES SAS', taxId: '901423712-1' },
+  amovil: { legalName: 'ASISTENCIA MOVIL SAS', taxId: '900464969-7' },
+};
 
 function resolveLogoPath(tenantSlug?: string): string | null {
   const normalizedTenant = tenantSlug?.trim().toLowerCase();
@@ -39,6 +54,26 @@ function resolveLogoPath(tenantSlug?: string): string | null {
   }
 
   return null;
+}
+
+function resolveTenantHeader(tenant?: TenantPdfData): {
+  legalName: string;
+  taxId: string;
+} {
+  const slug = tenant?.slug?.trim().toLowerCase();
+  const fallback = slug ? TENANT_HEADER_FALLBACKS[slug] : undefined;
+
+  const legalName =
+    tenant?.legalName?.trim() ||
+    fallback?.legalName ||
+    tenant?.name?.trim() ||
+    'EMPRESA';
+  const taxId = tenant?.taxId?.trim() || fallback?.taxId || 'SIN NIT';
+
+  return {
+    legalName,
+    taxId,
+  };
 }
 
 function estimatePageHeight(hasNotes: boolean, rowsCount: number): number {
@@ -159,18 +194,19 @@ function buildConcepts(payroll: PayrollEntity): ConceptRow[] {
 
 export function buildPayrollPdfBuffer(
   payroll: PayrollEntity,
-  tenantSlug?: string,
+  tenant?: TenantPdfData,
 ): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const logoPath = resolveLogoPath(tenantSlug);
+    const logoPath = resolveLogoPath(tenant?.slug);
     const hasLogo = Boolean(logoPath);
+    const tenantHeader = resolveTenantHeader(tenant);
     const rows = buildConcepts(payroll);
     const pageHeight = estimatePageHeight(Boolean(payroll.notes), rows.length);
 
     const doc = new PDFDocument({
       size: [PAGE_WIDTH, pageHeight],
       margin: 0,
-      info: { Title: `Nomina #${payroll.id}`, Author: 'AMAYA SOLUCIONES SAS' },
+      info: { Title: `Nomina #${payroll.id}`, Author: tenantHeader.legalName },
     });
 
     const chunks: Buffer[] = [];
@@ -210,12 +246,12 @@ export function buildPayrollPdfBuffer(
       .font('Helvetica-Bold')
       .fontSize(11)
       .fillColor(C.ink)
-      .text('AMAYA SOLUCIONES SAS', textX, y + 19, { lineBreak: false });
+      .text(tenantHeader.legalName, textX, y + 19, { lineBreak: false });
     doc
       .font('Helvetica')
       .fontSize(8)
       .fillColor(C.muted)
-      .text('NIT 901423712-1', textX, y + 34, { lineBreak: false })
+      .text(`NIT ${tenantHeader.taxId}`, textX, y + 34, { lineBreak: false })
       .text('RECIBO DE NOMINA', textX, y + 48, { lineBreak: false })
       .text('Comprobante de pago mensual', textX, y + 60, { lineBreak: false });
 

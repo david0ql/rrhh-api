@@ -14,6 +14,12 @@ export class TenantEntity {
   @Column({ type: 'varchar', length: 120, unique: true })
   name!: string;
 
+  @Column({ name: 'legal_name', type: 'varchar', length: 180 })
+  legalName!: string;
+
+  @Column({ name: 'tax_id', type: 'varchar', length: 40 })
+  taxId!: string;
+
   @Column({ type: 'varchar', length: 60, unique: true })
   slug!: string;
 

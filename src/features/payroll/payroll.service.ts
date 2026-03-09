@@ -78,7 +78,7 @@ export class PayrollService {
       relations: ['employee', 'tenant'],
     });
     if (!payroll) throw new NotFoundException('Nómina no encontrada');
-    return buildPayrollPdfBuffer(payroll, payroll.tenant?.slug);
+    return buildPayrollPdfBuffer(payroll, payroll.tenant);
   }
 
   async generateZip(payrollIds: number[], tenantId: number): Promise<Buffer> {
@@ -108,7 +108,7 @@ export class PayrollService {
 
       for (const id of uniqueIds) {
         const payroll = payrollMap.get(id)!;
-        const pdf = await buildPayrollPdfBuffer(payroll, payroll.tenant?.slug);
+        const pdf = await buildPayrollPdfBuffer(payroll, payroll.tenant);
         const safeEmployeeName = (payroll.employee?.fullName ?? 'empleado')
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')

@@ -36,6 +36,8 @@ export class TenantsService {
 
   async create(payload: CreateTenantDto) {
     const name = payload.name.trim();
+    const legalName = payload.legalName.trim();
+    const taxId = payload.taxId.trim();
     const slug = (
       payload.slug ? payload.slug.trim() : this.slugify(name)
     ).toLowerCase();
@@ -58,6 +60,8 @@ export class TenantsService {
 
     const entity = this.tenantsRepository.create({
       name,
+      legalName,
+      taxId,
       slug,
       isActive: true,
     });
