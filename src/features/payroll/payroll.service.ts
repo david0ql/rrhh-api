@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,7 +22,10 @@ import {
 import { getSkip, toPaginatedResponse } from '../../shared/pagination';
 import { buildPayrollPdfBuffer } from './payroll-pdf.builder';
 import { CreatePayrollDto } from './dto/create-payroll.dto';
-import { ListPayrollQueryDto, PayrollOrderBy } from './dto/list-payroll-query.dto';
+import {
+  ListPayrollQueryDto,
+  PayrollOrderBy,
+} from './dto/list-payroll-query.dto';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,8 +46,9 @@ export class PayrollService {
     private readonly mandatoryEarningsRepository: Repository<MandatoryEarningEntity>,
   ) {}
 
-  async list(query: ListPayrollQueryDto) {
+  async list(query: ListPayrollQueryDto, tenantId: number) {
     const [raw, totalItems] = await this.payrollRepository.findAndCount({
+      where: { tenantId },
       relations: ['employee'],
       skip: getSkip(query.page, query.take),
       take: query.take,
@@ -63,30 +72,32 @@ export class PayrollService {
     });
   }
 
-  async generatePdf(id: number): Promise<Buffer> {
+  async generatePdf(id: number, tenantId: number): Promise<Buffer> {
     const payroll = await this.payrollRepository.findOne({
-      where: { id },
-      relations: ['employee'],
+      where: { id, tenantId },
+      relations: ['employee', 'tenant'],
     });
     if (!payroll) throw new NotFoundException('Nómina no encontrada');
-    return buildPayrollPdfBuffer(payroll);
+    return buildPayrollPdfBuffer(payroll, payroll.tenant?.slug);
   }
 
-  async generateZip(payrollIds: number[]): Promise<Buffer> {
+  async generateZip(payrollIds: number[], tenantId: number): Promise<Buffer> {
     const uniqueIds = [...new Set(payrollIds)];
     if (uniqueIds.length === 0) {
       throw new BadRequestException('Debes enviar al menos una nómina');
     }
 
     const payrolls = await this.payrollRepository.find({
-      where: { id: In(uniqueIds) },
-      relations: ['employee'],
+      where: { id: In(uniqueIds), tenantId },
+      relations: ['employee', 'tenant'],
     });
 
     const payrollMap = new Map(payrolls.map((p) => [Number(p.id), p]));
     const missingIds = uniqueIds.filter((id) => !payrollMap.has(id));
     if (missingIds.length > 0) {
-      throw new NotFoundException(`No existen nóminas: ${missingIds.join(', ')}`);
+      throw new NotFoundException(
+        `No existen nóminas: ${missingIds.join(', ')}`,
+      );
     }
 
     const tempDir = await mkdtemp(join(tmpdir(), 'dally-rh-payroll-'));
@@ -97,7 +108,7 @@ export class PayrollService {
 
       for (const id of uniqueIds) {
         const payroll = payrollMap.get(id)!;
-        const pdf = await buildPayrollPdfBuffer(payroll);
+        const pdf = await buildPayrollPdfBuffer(payroll, payroll.tenant?.slug);
         const safeEmployeeName = (payroll.employee?.fullName ?? 'empleado')
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
@@ -117,32 +128,46 @@ export class PayrollService {
     }
   }
 
-  async create(payload: CreatePayrollDto) {
+  async create(payload: CreatePayrollDto, tenantId: number) {
     if (payload.month < 1 || payload.month > 12) {
       throw new BadRequestException('month debe estar entre 1 y 12');
     }
 
-    const employee = await this.employeesRepository.findOne({ where: { id: payload.employeeId } });
+    const employee = await this.employeesRepository.findOne({
+      where: { id: payload.employeeId, tenantId },
+    });
     if (!employee) {
       throw new NotFoundException('Empleado no encontrado');
     }
 
     const existing = await this.payrollRepository.findOne({
-      where: { employeeId: payload.employeeId, year: payload.year, month: payload.month },
+      where: {
+        tenantId,
+        employeeId: payload.employeeId,
+        year: payload.year,
+        month: payload.month,
+      },
     });
     if (existing) {
-      throw new ConflictException('Ya existe nómina para ese empleado en ese mes');
+      throw new ConflictException(
+        'Ya existe nómina para ese empleado en ese mes',
+      );
     }
 
     const contributionBase = payload.earnedSalary + payload.earnedExtras;
 
     const mandatoryDeductions = await this.mandatoryDeductionsRepository.find({
-      where: [{ code: 'SALUD', isActive: true }, { code: 'PENSION', isActive: true }],
+      where: [
+        { code: 'SALUD', isActive: true },
+        { code: 'PENSION', isActive: true },
+      ],
     });
     const salud = mandatoryDeductions.find((d) => d.code === 'SALUD');
     const pension = mandatoryDeductions.find((d) => d.code === 'PENSION');
     if (!salud || !pension) {
-      throw new BadRequestException('No están configuradas las deducciones obligatorias de salud y pensión');
+      throw new BadRequestException(
+        'No están configuradas las deducciones obligatorias de salud y pensión',
+      );
     }
 
     const healthEmployeeRate = Number(salud.employeeRate);
@@ -150,8 +175,12 @@ export class PayrollService {
     const pensionEmployeeRate = Number(pension.employeeRate);
     const pensionEmployerRate = Number(pension.employerRate);
 
-    const deductionHealth = this.roundMoney((contributionBase * healthEmployeeRate) / 100);
-    const deductionPension = this.roundMoney((contributionBase * pensionEmployeeRate) / 100);
+    const deductionHealth = this.roundMoney(
+      (contributionBase * healthEmployeeRate) / 100,
+    );
+    const deductionPension = this.roundMoney(
+      (contributionBase * pensionEmployeeRate) / 100,
+    );
 
     const mandatoryEarnings = await this.mandatoryEarningsRepository.find({
       where: [
@@ -159,7 +188,9 @@ export class PayrollService {
         { code: 'AUXILIO_TRANSPORTE_MENSUAL', isActive: true },
       ],
     });
-    const minimumWageParam = mandatoryEarnings.find((e) => e.code === 'SALARIO_MINIMO_MENSUAL');
+    const minimumWageParam = mandatoryEarnings.find(
+      (e) => e.code === 'SALARIO_MINIMO_MENSUAL',
+    );
     const transportAllowanceParam = mandatoryEarnings.find(
       (e) => e.code === 'AUXILIO_TRANSPORTE_MENSUAL',
     );
@@ -170,11 +201,20 @@ export class PayrollService {
     }
 
     const minimumWageMonthly = Number(minimumWageParam.monthlyAmount);
-    const transportAllowanceMonthly = Number(transportAllowanceParam.monthlyAmount);
-    const transportAllowanceDaily = this.roundAmount(transportAllowanceMonthly / 30, 6);
-    const workedDaysForAllowance = Math.max(0, Math.min(30, Number(payload.daysWorked)));
+    const transportAllowanceMonthly = Number(
+      transportAllowanceParam.monthlyAmount,
+    );
+    const transportAllowanceDaily = this.roundAmount(
+      transportAllowanceMonthly / 30,
+      6,
+    );
+    const workedDaysForAllowance = Math.max(
+      0,
+      Math.min(30, Number(payload.daysWorked)),
+    );
     const transportAllowanceSalaryLimit = minimumWageMonthly * 2;
-    const appliesTransportAllowance = Number(payload.earnedSalary) <= transportAllowanceSalaryLimit;
+    const appliesTransportAllowance =
+      Number(payload.earnedSalary) <= transportAllowanceSalaryLimit;
     const earnedTransportAllowance = appliesTransportAllowance
       ? this.roundMoney(transportAllowanceDaily * workedDaysForAllowance)
       : 0;
@@ -187,6 +227,7 @@ export class PayrollService {
 
     const entity = this.payrollRepository.create({
       ...payload,
+      tenantId,
       paymentDate: payload.paymentDate ?? null,
       earnedTransportAllowance,
       deductionHealth,
@@ -208,7 +249,9 @@ export class PayrollService {
       savedPayroll = await this.payrollRepository.save(entity);
     } catch (error) {
       if (this.isDuplicatePayrollPeriodError(error)) {
-        throw new ConflictException('Ya existe nómina para ese empleado en ese mes');
+        throw new ConflictException(
+          'Ya existe nómina para ese empleado en ese mes',
+        );
       }
       throw error;
     }
@@ -219,11 +262,16 @@ export class PayrollService {
 
       if (payload.loanId) {
         loan = await this.loansRepository.findOne({
-          where: { id: payload.loanId, employeeId: payload.employeeId, status: 'ACTIVO' },
+          where: {
+            id: payload.loanId,
+            tenantId,
+            employeeId: payload.employeeId,
+            status: 'ACTIVO',
+          },
         });
       } else {
         loan = await this.loansRepository.findOne({
-          where: { employeeId: payload.employeeId, status: 'ACTIVO' },
+          where: { tenantId, employeeId: payload.employeeId, status: 'ACTIVO' },
           order: { id: 'ASC' },
         });
       }
@@ -233,6 +281,7 @@ export class PayrollService {
           payload.paymentDate ?? new Date().toISOString().slice(0, 10);
 
         const payment = this.loanPaymentsRepository.create({
+          tenantId,
           loanId: loan.id,
           payrollId: savedPayroll.id,
           paymentDate,
@@ -243,7 +292,10 @@ export class PayrollService {
         const savedPayment = await this.loanPaymentsRepository.save(payment);
 
         loan.paidAmount = Number(loan.paidAmount) + Number(savedPayment.amount);
-        loan.balance = Math.max(0, Number(loan.principalAmount) - loan.paidAmount);
+        loan.balance = Math.max(
+          0,
+          Number(loan.principalAmount) - loan.paidAmount,
+        );
         loan.status = loan.balance === 0 ? 'PAGADO' : 'ACTIVO';
         await this.loansRepository.save(loan);
       }
@@ -254,7 +306,11 @@ export class PayrollService {
 
   private isDuplicatePayrollPeriodError(error: unknown): boolean {
     if (!(error instanceof QueryFailedError)) return false;
-    const driverError = (error as QueryFailedError & { driverError?: { code?: string; errno?: number } }).driverError;
+    const driverError = (
+      error as QueryFailedError & {
+        driverError?: { code?: string; errno?: number };
+      }
+    ).driverError;
     return driverError?.code === 'ER_DUP_ENTRY' || driverError?.errno === 1062;
   }
 

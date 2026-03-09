@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -29,8 +33,8 @@ export class LoansService {
     private readonly payrollRepository: Repository<PayrollEntity>,
   ) {}
 
-  async listLoans(query: ListLoansQueryDto) {
-    const where: Record<string, unknown> = {};
+  async listLoans(query: ListLoansQueryDto, tenantId: number) {
+    const where: Record<string, unknown> = { tenantId };
     if (query.employeeId) where.employeeId = query.employeeId;
     if (query.status) where.status = query.status;
 
@@ -59,8 +63,9 @@ export class LoansService {
     });
   }
 
-  async listPayments(query: ListLoanPaymentsQueryDto) {
+  async listPayments(query: ListLoanPaymentsQueryDto, tenantId: number) {
     const [data, totalItems] = await this.loanPaymentsRepository.findAndCount({
+      where: { tenantId },
       skip: getSkip(query.page, query.take),
       take: query.take,
       order: {
@@ -78,14 +83,17 @@ export class LoansService {
     });
   }
 
-  async createLoan(payload: CreateLoanDto) {
-    const employee = await this.employeesRepository.findOne({ where: { id: payload.employeeId } });
+  async createLoan(payload: CreateLoanDto, tenantId: number) {
+    const employee = await this.employeesRepository.findOne({
+      where: { id: payload.employeeId, tenantId },
+    });
     if (!employee) {
       throw new NotFoundException('Empleado no encontrado');
     }
 
     const entity = this.loansRepository.create({
       ...payload,
+      tenantId,
       suggestedInstallmentAmount: payload.suggestedInstallmentAmount ?? null,
       paidAmount: 0,
       balance: payload.principalAmount,
@@ -95,14 +103,18 @@ export class LoansService {
     return this.loansRepository.save(entity);
   }
 
-  async registerPayment(payload: CreateLoanPaymentDto) {
-    const loan = await this.loansRepository.findOne({ where: { id: payload.loanId } });
+  async registerPayment(payload: CreateLoanPaymentDto, tenantId: number) {
+    const loan = await this.loansRepository.findOne({
+      where: { id: payload.loanId, tenantId },
+    });
     if (!loan) {
       throw new NotFoundException('Prestamo no encontrado');
     }
 
     if (payload.payrollId) {
-      const payroll = await this.payrollRepository.findOne({ where: { id: payload.payrollId } });
+      const payroll = await this.payrollRepository.findOne({
+        where: { id: payload.payrollId, tenantId },
+      });
       if (!payroll) {
         throw new BadRequestException('payrollId no existe');
       }
@@ -110,6 +122,7 @@ export class LoansService {
 
     const payment = this.loanPaymentsRepository.create({
       ...payload,
+      tenantId,
       source: payload.source ?? 'NOMINA',
       payrollId: payload.payrollId ?? null,
       notes: payload.notes ?? null,

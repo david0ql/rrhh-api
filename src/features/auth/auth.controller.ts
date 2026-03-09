@@ -1,4 +1,11 @@
-import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -24,8 +31,9 @@ export class AuthController {
         lastLoginAt: Date | null;
       };
     },
-    @Body() _body: LoginDto,
+    @Body() body: LoginDto,
   ) {
+    void body;
     return this.authService.login(req.user);
   }
 
@@ -37,8 +45,11 @@ export class AuthController {
 
   @UseGuards(JwtAuthGuard)
   @Post('logout')
-  async logout() {
-    return { success: true, message: 'Con JWT stateless, logout es responsabilidad del cliente' };
+  logout() {
+    return {
+      success: true,
+      message: 'Con JWT stateless, logout es responsabilidad del cliente',
+    };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -47,6 +58,10 @@ export class AuthController {
     @CurrentUser() user: { userId: number },
     @Body() body: ChangePasswordDto,
   ) {
-    return this.authService.changePassword(user.userId, body.currentPassword, body.newPassword);
+    return this.authService.changePassword(
+      user.userId,
+      body.currentPassword,
+      body.newPassword,
+    );
   }
 }

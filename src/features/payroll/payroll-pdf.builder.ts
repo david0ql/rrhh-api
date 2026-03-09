@@ -13,14 +13,38 @@ type ConceptRow = {
 
 const PAGE_WIDTH = 595;
 const MARGIN = 40;
-const LOGO_PATH = join(process.cwd(), 'assets', 'logo.jpeg');
-const HAS_LOGO = existsSync(LOGO_PATH);
 const HEADER_H = 92;
 const HEADER_GAP = 12;
 
+function resolveLogoPath(tenantSlug?: string): string | null {
+  const normalizedTenant = tenantSlug?.trim().toLowerCase();
+  const candidates = normalizedTenant
+    ? [
+        join(process.cwd(), 'assets', `${normalizedTenant}.jpeg`),
+        join(process.cwd(), 'assets', `${normalizedTenant}.jpg`),
+        join(process.cwd(), 'assets', `${normalizedTenant}.png`),
+      ]
+    : [];
+
+  candidates.push(
+    join(process.cwd(), 'assets', 'logo.jpeg'),
+    join(process.cwd(), 'assets', 'logo.jpg'),
+    join(process.cwd(), 'assets', 'logo.png'),
+  );
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function estimatePageHeight(hasNotes: boolean, rowsCount: number): number {
   const contentHeight =
-    HEADER_H + HEADER_GAP + // header + gap
+    HEADER_H +
+    HEADER_GAP + // header + gap
     90 + // summary + gap
     22 + // concept header
     rowsCount * 20 +
@@ -73,7 +97,11 @@ function buildConcepts(payroll: PayrollEntity): ConceptRow[] {
   const healthRate = Number(payroll.healthEmployeeRate ?? 4);
   const pensionRate = Number(payroll.pensionEmployeeRate ?? 4);
   const rows: ConceptRow[] = [
-    { concept: 'Salario devengado', kind: 'DEVENGADO', value: Number(payroll.earnedSalary) },
+    {
+      concept: 'Salario devengado',
+      kind: 'DEVENGADO',
+      value: Number(payroll.earnedSalary),
+    },
   ];
 
   if (Number(payroll.earnedTransportAllowance) > 0) {
@@ -87,19 +115,39 @@ function buildConcepts(payroll: PayrollEntity): ConceptRow[] {
   }
 
   if (Number(payroll.earnedExtras) > 0) {
-    rows.push({ concept: 'Extras / bonificaciones', kind: 'DEVENGADO', value: Number(payroll.earnedExtras) });
+    rows.push({
+      concept: 'Extras / bonificaciones',
+      kind: 'DEVENGADO',
+      value: Number(payroll.earnedExtras),
+    });
   }
   if (Number(payroll.deductionHealth) > 0) {
-    rows.push({ concept: `Deduccion salud (${healthRate.toFixed(2)}%)`, kind: 'DEDUCCION', value: Number(payroll.deductionHealth) });
+    rows.push({
+      concept: `Deduccion salud (${healthRate.toFixed(2)}%)`,
+      kind: 'DEDUCCION',
+      value: Number(payroll.deductionHealth),
+    });
   }
   if (Number(payroll.deductionPension) > 0) {
-    rows.push({ concept: `Deduccion pension (${pensionRate.toFixed(2)}%)`, kind: 'DEDUCCION', value: Number(payroll.deductionPension) });
+    rows.push({
+      concept: `Deduccion pension (${pensionRate.toFixed(2)}%)`,
+      kind: 'DEDUCCION',
+      value: Number(payroll.deductionPension),
+    });
   }
   if (Number(payroll.deductionLoan) > 0) {
-    rows.push({ concept: 'Deduccion prestamo', kind: 'DEDUCCION', value: Number(payroll.deductionLoan) });
+    rows.push({
+      concept: 'Deduccion prestamo',
+      kind: 'DEDUCCION',
+      value: Number(payroll.deductionLoan),
+    });
   }
   if (Number(payroll.deductionOther) > 0) {
-    rows.push({ concept: 'Otras deducciones', kind: 'DEDUCCION', value: Number(payroll.deductionOther) });
+    rows.push({
+      concept: 'Otras deducciones',
+      kind: 'DEDUCCION',
+      value: Number(payroll.deductionOther),
+    });
   }
 
   if (rows.every((r) => r.kind !== 'DEDUCCION')) {
@@ -109,8 +157,13 @@ function buildConcepts(payroll: PayrollEntity): ConceptRow[] {
   return rows;
 }
 
-export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
+export function buildPayrollPdfBuffer(
+  payroll: PayrollEntity,
+  tenantSlug?: string,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
+    const logoPath = resolveLogoPath(tenantSlug);
+    const hasLogo = Boolean(logoPath);
     const rows = buildConcepts(payroll);
     const pageHeight = estimatePageHeight(Boolean(payroll.notes), rows.length);
 
@@ -132,7 +185,12 @@ export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
     let y = margin;
 
     // Header compacto
-    doc.rect(margin, y, contentW, HEADER_H).fill(C.white).strokeColor(C.border).lineWidth(1).stroke();
+    doc
+      .rect(margin, y, contentW, HEADER_H)
+      .fill(C.white)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
     const textTopY = y + 19;
     const textBottomY = y + 68;
     const textCenterY = (textTopY + textBottomY) / 2;
@@ -140,50 +198,126 @@ export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
     const logoBoxW = 96;
     const logoBoxH = 70;
     const logoY = textCenterY - logoBoxH / 2;
-    const textX = HAS_LOGO ? logoX + logoBoxW + 10 : margin + 14;
-    if (HAS_LOGO) {
-      doc.image(LOGO_PATH, logoX, logoY, {
+    const textX = hasLogo ? logoX + logoBoxW + 10 : margin + 14;
+    if (hasLogo) {
+      doc.image(logoPath!, logoX, logoY, {
         fit: [logoBoxW, logoBoxH],
         align: 'center',
         valign: 'center',
       });
     }
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(C.ink)
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.ink)
       .text('AMAYA SOLUCIONES SAS', textX, y + 19, { lineBreak: false });
-    doc.font('Helvetica').fontSize(8).fillColor(C.muted)
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor(C.muted)
       .text('NIT 901423712-1', textX, y + 34, { lineBreak: false })
       .text('RECIBO DE NOMINA', textX, y + 48, { lineBreak: false })
       .text('Comprobante de pago mensual', textX, y + 60, { lineBreak: false });
 
-    doc.font('Helvetica').fontSize(8).fillColor(C.muted)
-      .text('No. RECIBO', margin, y + 13, { width: contentW - 14, align: 'right', lineBreak: false })
-      .text('PERIODO', margin, y + 35, { width: contentW - 14, align: 'right', lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(9).fillColor(C.ink)
-      .text(String(payroll.id), margin, y + 23, { width: contentW - 14, align: 'right', lineBreak: false })
-      .text(fmtPeriod(payroll.year, payroll.month), margin, y + 45, { width: contentW - 14, align: 'right', lineBreak: false });
+    doc
+      .font('Helvetica')
+      .fontSize(8)
+      .fillColor(C.muted)
+      .text('No. RECIBO', margin, y + 13, {
+        width: contentW - 14,
+        align: 'right',
+        lineBreak: false,
+      })
+      .text('PERIODO', margin, y + 35, {
+        width: contentW - 14,
+        align: 'right',
+        lineBreak: false,
+      });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(9)
+      .fillColor(C.ink)
+      .text(String(payroll.id), margin, y + 23, {
+        width: contentW - 14,
+        align: 'right',
+        lineBreak: false,
+      })
+      .text(fmtPeriod(payroll.year, payroll.month), margin, y + 45, {
+        width: contentW - 14,
+        align: 'right',
+        lineBreak: false,
+      });
 
     y += HEADER_H + HEADER_GAP;
 
     // Resumen empleado + liquidacion (compacto)
-    doc.rect(margin, y, contentW, 78).fill(C.lighter).strokeColor(C.border).lineWidth(1).stroke();
+    doc
+      .rect(margin, y, contentW, 78)
+      .fill(C.lighter)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
     const splitX = margin + Math.floor(contentW * 0.54);
-    doc.moveTo(splitX, y).lineTo(splitX, y + 78).strokeColor(C.border).lineWidth(1).stroke();
+    doc
+      .moveTo(splitX, y)
+      .lineTo(splitX, y + 78)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
 
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(C.muted)
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(C.muted)
       .text('EMPLEADO', margin + 12, y + 8, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(C.ink)
-      .text(payroll.employee.fullName, margin + 12, y + 20, { width: splitX - margin - 24 });
-    doc.font('Helvetica').fontSize(8.5).fillColor(C.muted)
-      .text(`${payroll.employee.jobTitle}`, margin + 12, y + 36, { width: splitX - margin - 24 })
-      .text(`${payroll.employee.documentType} ${payroll.employee.documentNumber}`, margin + 12, y + 49, { width: splitX - margin - 24 })
-      .text(`Ingreso: ${fmtDate(payroll.employee.hiredAt)}`, margin + 12, y + 62, { width: splitX - margin - 24 });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.ink)
+      .text(payroll.employee.fullName, margin + 12, y + 20, {
+        width: splitX - margin - 24,
+      });
+    doc
+      .font('Helvetica')
+      .fontSize(8.5)
+      .fillColor(C.muted)
+      .text(`${payroll.employee.jobTitle}`, margin + 12, y + 36, {
+        width: splitX - margin - 24,
+      })
+      .text(
+        `${payroll.employee.documentType} ${payroll.employee.documentNumber}`,
+        margin + 12,
+        y + 49,
+        { width: splitX - margin - 24 },
+      )
+      .text(
+        `Ingreso: ${fmtDate(payroll.employee.hiredAt)}`,
+        margin + 12,
+        y + 62,
+        { width: splitX - margin - 24 },
+      );
 
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(C.muted)
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(C.muted)
       .text('LIQUIDACION', splitX + 12, y + 8, { lineBreak: false });
-    doc.font('Helvetica').fontSize(8.5).fillColor(C.muted)
-      .text(`Dias laborados: ${payroll.daysWorked}`, splitX + 12, y + 24, { width: margin + contentW - splitX - 20 })
-      .text(`Fecha de pago: ${payroll.paymentDate ? fmtDate(payroll.paymentDate) : 'Pendiente'}`, splitX + 12, y + 39, { width: margin + contentW - splitX - 20 })
-      .text(`Neto: ${cop(Number(payroll.netPay))}`, splitX + 12, y + 54, { width: margin + contentW - splitX - 20 });
+    doc
+      .font('Helvetica')
+      .fontSize(8.5)
+      .fillColor(C.muted)
+      .text(`Dias laborados: ${payroll.daysWorked}`, splitX + 12, y + 24, {
+        width: margin + contentW - splitX - 20,
+      })
+      .text(
+        `Fecha de pago: ${payroll.paymentDate ? fmtDate(payroll.paymentDate) : 'Pendiente'}`,
+        splitX + 12,
+        y + 39,
+        { width: margin + contentW - splitX - 20 },
+      )
+      .text(`Neto: ${cop(Number(payroll.netPay))}`, splitX + 12, y + 54, {
+        width: margin + contentW - splitX - 20,
+      });
 
     y += 90;
 
@@ -192,11 +326,30 @@ export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
     const typeW = 100;
     const amountW = 100;
     const rowH = 20;
-    doc.rect(margin, y, contentW, 22).fill(C.light).strokeColor(C.border).lineWidth(1).stroke();
-    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(C.ink)
-      .text('CONCEPTO', margin + 10, y + 7, { width: conceptW, lineBreak: false })
-      .text('TIPO', margin + contentW - amountW - typeW, y + 7, { width: typeW - 10, align: 'center', lineBreak: false })
-      .text('VALOR', margin + contentW - amountW, y + 7, { width: amountW - 10, align: 'right', lineBreak: false });
+    doc
+      .rect(margin, y, contentW, 22)
+      .fill(C.light)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8.5)
+      .fillColor(C.ink)
+      .text('CONCEPTO', margin + 10, y + 7, {
+        width: conceptW,
+        lineBreak: false,
+      })
+      .text('TIPO', margin + contentW - amountW - typeW, y + 7, {
+        width: typeW - 10,
+        align: 'center',
+        lineBreak: false,
+      })
+      .text('VALOR', margin + contentW - amountW, y + 7, {
+        width: amountW - 10,
+        align: 'right',
+        lineBreak: false,
+      });
 
     y += 22;
 
@@ -204,19 +357,38 @@ export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
       const rowY = y + i * rowH;
       const row = rows[i];
 
-      doc.rect(margin, rowY, contentW, rowH)
+      doc
+        .rect(margin, rowY, contentW, rowH)
         .fill(i % 2 === 0 ? C.white : C.lighter)
         .strokeColor(C.border)
         .lineWidth(0.6)
         .stroke();
 
-      doc.font('Helvetica').fontSize(8.5).fillColor(C.muted)
-        .text(row.concept, margin + 10, rowY + 6.5, { width: conceptW, lineBreak: false });
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(C.muted)
-        .text(row.kind, margin + contentW - amountW - typeW, rowY + 6.5, { width: typeW - 10, align: 'center', lineBreak: false });
-      doc.font('Helvetica').fontSize(8.5).fillColor(C.ink)
+      doc
+        .font('Helvetica')
+        .fontSize(8.5)
+        .fillColor(C.muted)
+        .text(row.concept, margin + 10, rowY + 6.5, {
+          width: conceptW,
+          lineBreak: false,
+        });
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .fillColor(C.muted)
+        .text(row.kind, margin + contentW - amountW - typeW, rowY + 6.5, {
+          width: typeW - 10,
+          align: 'center',
+          lineBreak: false,
+        });
+      doc
+        .font('Helvetica')
+        .fontSize(8.5)
+        .fillColor(C.ink)
         .text(
-          row.value > 0 ? `${row.kind === 'DEDUCCION' ? '-' : ''}${cop(row.value)}` : '-',
+          row.value > 0
+            ? `${row.kind === 'DEDUCCION' ? '-' : ''}${cop(row.value)}`
+            : '-',
           margin + contentW - amountW,
           rowY + 6.5,
           { width: amountW - 10, align: 'right', lineBreak: false },
@@ -232,47 +404,132 @@ export function buildPayrollPdfBuffer(payroll: PayrollEntity): Promise<Buffer> {
     const rightW = contentW - halfW;
     const midX = margin + leftW;
 
-    doc.rect(margin, y, contentW, totalsH).fill(C.light).strokeColor(C.border).lineWidth(1).stroke();
-    doc.moveTo(midX, y).lineTo(midX, y + totalsH).strokeColor(C.border).lineWidth(1).stroke();
+    doc
+      .rect(margin, y, contentW, totalsH)
+      .fill(C.light)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
+    doc
+      .moveTo(midX, y)
+      .lineTo(midX, y + totalsH)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
 
-    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(C.muted)
-      .text('TOTAL DEVENGADO', margin + 10, y + 8, { width: leftW - 20, lineBreak: false })
-      .text('TOTAL DEDUCCIONES', midX + 10, y + 8, { width: rightW - 20, lineBreak: false });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(7.5)
+      .fillColor(C.muted)
+      .text('TOTAL DEVENGADO', margin + 10, y + 8, {
+        width: leftW - 20,
+        lineBreak: false,
+      })
+      .text('TOTAL DEDUCCIONES', midX + 10, y + 8, {
+        width: rightW - 20,
+        lineBreak: false,
+      });
 
-    doc.font('Helvetica-Bold').fontSize(11).fillColor(C.ink)
-      .text(cop(Number(payroll.totalEarnings)), margin + 10, y + 20, { width: leftW - 20, align: 'right', lineBreak: false })
-      .text(cop(Number(payroll.totalDeductions)), midX + 10, y + 20, { width: rightW - 20, align: 'right', lineBreak: false });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.ink)
+      .text(cop(Number(payroll.totalEarnings)), margin + 10, y + 20, {
+        width: leftW - 20,
+        align: 'right',
+        lineBreak: false,
+      })
+      .text(cop(Number(payroll.totalDeductions)), midX + 10, y + 20, {
+        width: rightW - 20,
+        align: 'right',
+        lineBreak: false,
+      });
 
     y += totalsH + 8;
 
-    doc.rect(margin, y, contentW, 38).fill(C.white).strokeColor(C.ink).lineWidth(1.1).stroke();
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(C.ink)
+    doc
+      .rect(margin, y, contentW, 38)
+      .fill(C.white)
+      .strokeColor(C.ink)
+      .lineWidth(1.1)
+      .stroke();
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(C.ink)
       .text('NETO A PAGAR', margin + 12, y + 14, { lineBreak: false });
-    doc.font('Helvetica-Bold').fontSize(15).fillColor(C.ink)
-      .text(cop(Number(payroll.netPay)), margin, y + 10, { width: contentW - 12, align: 'right', lineBreak: false });
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(15)
+      .fillColor(C.ink)
+      .text(cop(Number(payroll.netPay)), margin, y + 10, {
+        width: contentW - 12,
+        align: 'right',
+        lineBreak: false,
+      });
 
     y += 48;
 
     if (payroll.notes) {
       const notesHeight = 42;
-      doc.rect(margin, y, contentW, notesHeight).fill(C.lighter).strokeColor(C.border).lineWidth(1).stroke();
-      doc.font('Helvetica-Bold').fontSize(8).fillColor(C.muted)
+      doc
+        .rect(margin, y, contentW, notesHeight)
+        .fill(C.lighter)
+        .strokeColor(C.border)
+        .lineWidth(1)
+        .stroke();
+      doc
+        .font('Helvetica-Bold')
+        .fontSize(8)
+        .fillColor(C.muted)
         .text('OBSERVACIONES', margin + 10, y + 7, { lineBreak: false });
-      doc.font('Helvetica').fontSize(8.5).fillColor(C.muted)
-        .text(payroll.notes, margin + 10, y + 18, { width: contentW - 20, height: notesHeight - 24, ellipsis: true });
+      doc
+        .font('Helvetica')
+        .fontSize(8.5)
+        .fillColor(C.muted)
+        .text(payroll.notes, margin + 10, y + 18, {
+          width: contentW - 20,
+          height: notesHeight - 24,
+          ellipsis: true,
+        });
       y += notesHeight + 10;
     }
 
     // Firma empleado (pegada al contenido)
     const signBlockH = 62;
     const signLineY = y + 34;
-    doc.rect(margin, y, contentW, signBlockH).fill(C.white).strokeColor(C.border).lineWidth(1).stroke();
-    doc.font('Helvetica-Bold').fontSize(8).fillColor(C.muted)
-      .text('FIRMA DE RECIBIDO DEL EMPLEADO', margin + 12, y + 8, { lineBreak: false });
-    doc.moveTo(margin + 12, signLineY).lineTo(margin + contentW - 12, signLineY).strokeColor(C.muted).lineWidth(0.8).stroke();
-    doc.font('Helvetica').fontSize(8.5).fillColor(C.ink)
-      .text(payroll.employee.fullName, margin + 12, signLineY + 6, { lineBreak: false })
-      .text(`${payroll.employee.documentType} ${payroll.employee.documentNumber}`, margin + 12, signLineY + 18, { lineBreak: false });
+    doc
+      .rect(margin, y, contentW, signBlockH)
+      .fill(C.white)
+      .strokeColor(C.border)
+      .lineWidth(1)
+      .stroke();
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(8)
+      .fillColor(C.muted)
+      .text('FIRMA DE RECIBIDO DEL EMPLEADO', margin + 12, y + 8, {
+        lineBreak: false,
+      });
+    doc
+      .moveTo(margin + 12, signLineY)
+      .lineTo(margin + contentW - 12, signLineY)
+      .strokeColor(C.muted)
+      .lineWidth(0.8)
+      .stroke();
+    doc
+      .font('Helvetica')
+      .fontSize(8.5)
+      .fillColor(C.ink)
+      .text(payroll.employee.fullName, margin + 12, signLineY + 6, {
+        lineBreak: false,
+      })
+      .text(
+        `${payroll.employee.documentType} ${payroll.employee.documentNumber}`,
+        margin + 12,
+        signLineY + 18,
+        { lineBreak: false },
+      );
 
     doc.end();
   });

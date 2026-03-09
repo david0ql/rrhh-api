@@ -6,9 +6,11 @@ import { MandatoryDeductionEntity } from './mandatory-deduction.entity';
 import { LoanStatusEntity } from './loan-status.entity';
 import { LoanEntity } from './loan.entity';
 import { PayrollEntity } from './payroll.entity';
+import { TenantEntity } from './tenant.entity';
 import { UserEntity } from './user.entity';
 
 export const databaseEntities = [
+  TenantEntity,
   DocumentTypeEntity,
   LoanStatusEntity,
   UserEntity,
@@ -29,5 +31,6 @@ export {
   LoanStatusEntity,
   MandatoryDeductionEntity,
   PayrollEntity,
+  TenantEntity,
   UserEntity,
 };

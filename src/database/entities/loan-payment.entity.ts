@@ -9,22 +9,36 @@ import {
 import { decimalTransformer } from '../transformers/decimal.transformer';
 import { LoanEntity } from './loan.entity';
 import { PayrollEntity } from './payroll.entity';
+import { TenantEntity } from './tenant.entity';
 
 @Entity({ name: 'loan_payments' })
 export class LoanPaymentEntity {
   @PrimaryGeneratedColumn({ type: 'bigint', unsigned: true })
   id!: number;
 
+  @Column({ name: 'tenant_id', type: 'bigint', unsigned: true })
+  tenantId!: number;
+
   @Column({ name: 'loan_id', type: 'bigint', unsigned: true })
   loanId!: number;
 
-  @Column({ name: 'payroll_id', type: 'bigint', unsigned: true, nullable: true })
+  @Column({
+    name: 'payroll_id',
+    type: 'bigint',
+    unsigned: true,
+    nullable: true,
+  })
   payrollId!: number | null;
 
   @Column({ name: 'payment_date', type: 'date' })
   paymentDate!: string;
 
-  @Column({ type: 'decimal', precision: 14, scale: 2, transformer: decimalTransformer })
+  @Column({
+    type: 'decimal',
+    precision: 14,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   amount!: number;
 
   @Column({ type: 'varchar', length: 20, default: () => "'NOMINA'" })
@@ -43,4 +57,8 @@ export class LoanPaymentEntity {
   @ManyToOne(() => PayrollEntity, (payroll) => payroll.loanPayments)
   @JoinColumn({ name: 'payroll_id' })
   payroll!: PayrollEntity | null;
+
+  @ManyToOne(() => TenantEntity)
+  @JoinColumn({ name: 'tenant_id' })
+  tenant!: TenantEntity;
 }

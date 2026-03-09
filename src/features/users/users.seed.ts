@@ -15,10 +15,18 @@ export class UsersSeedService implements OnModuleInit {
 
   async onModuleInit() {
     const username = this.configService.get<string>('ADMIN_USERNAME', 'admin');
-    const email = this.configService.get<string>('ADMIN_EMAIL', 'admin@dally.local');
-    const password = this.configService.get<string>('ADMIN_PASSWORD', 'admin123');
+    const email = this.configService.get<string>(
+      'ADMIN_EMAIL',
+      'admin@dally.local',
+    );
+    const password = this.configService.get<string>(
+      'ADMIN_PASSWORD',
+      'admin123',
+    );
 
-    const existingUser = await this.usersRepository.findOne({ where: { username } });
+    const existingUser = await this.usersRepository.findOne({
+      where: { username },
+    });
     if (existingUser) {
       return;
     }

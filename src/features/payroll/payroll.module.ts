@@ -8,6 +8,7 @@ import {
   MandatoryEarningEntity,
   PayrollEntity,
 } from '../../database/entities';
+import { TenantsModule } from '../tenants/tenants.module';
 import { PayrollController } from './payroll.controller';
 import { PayrollService } from './payroll.service';
 
@@ -21,6 +22,7 @@ import { PayrollService } from './payroll.service';
       MandatoryDeductionEntity,
       MandatoryEarningEntity,
     ]),
+    TenantsModule,
   ],
   controllers: [PayrollController],
   providers: [PayrollService],

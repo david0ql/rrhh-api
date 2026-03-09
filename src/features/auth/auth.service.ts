@@ -29,7 +29,10 @@ export class AuthService {
 
     const isValidPassword = await argon2.verify(user.passwordHash, pass);
     if (!isValidPassword) {
-      await this.usersService.registerFailedLogin(user.id, user.failedLoginAttempts);
+      await this.usersService.registerFailedLogin(
+        user.id,
+        user.failedLoginAttempts,
+      );
       return null;
     }
 
@@ -62,14 +65,21 @@ export class AuthService {
     return this.sanitizeUser(user);
   }
 
-  async changePassword(userId: number, currentPassword: string, newPassword: string) {
+  async changePassword(
+    userId: number,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.usersService.findById(userId);
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('Usuario no valido');
     }
 
-    const currentValid = await argon2.verify(user.passwordHash, currentPassword);
+    const currentValid = await argon2.verify(
+      user.passwordHash,
+      currentPassword,
+    );
     if (!currentValid) {
       throw new UnauthorizedException('La contraseña actual es incorrecta');
     }

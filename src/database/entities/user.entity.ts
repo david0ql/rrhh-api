@@ -20,7 +20,12 @@ export class UserEntity {
   @Column({ name: 'password_hash', type: 'varchar', length: 255 })
   passwordHash!: string;
 
-  @Column({ name: 'password_algo', type: 'varchar', length: 20, default: () => "'argon2id'" })
+  @Column({
+    name: 'password_algo',
+    type: 'varchar',
+    length: 20,
+    default: () => "'argon2id'",
+  })
   passwordAlgo!: string;
 
   @Column({ name: 'is_active', type: 'tinyint', width: 1, default: () => '1' })
@@ -29,7 +34,12 @@ export class UserEntity {
   @Column({ name: 'is_admin', type: 'tinyint', width: 1, default: () => '1' })
   isAdmin!: boolean;
 
-  @Column({ name: 'must_change_password', type: 'tinyint', width: 1, default: () => '0' })
+  @Column({
+    name: 'must_change_password',
+    type: 'tinyint',
+    width: 1,
+    default: () => '0',
+  })
   mustChangePassword!: boolean;
 
   @Column({ name: 'failed_login_attempts', type: 'int', default: () => '0' })

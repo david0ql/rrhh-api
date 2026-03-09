@@ -1,10 +1,17 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmployeeEntity } from '../../database/entities';
 import { getSkip, toPaginatedResponse } from '../../shared/pagination';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
-import { EmployeeOrderBy, ListEmployeesQueryDto } from './dto/list-employees-query.dto';
+import {
+  EmployeeOrderBy,
+  ListEmployeesQueryDto,
+} from './dto/list-employees-query.dto';
 import { UpdateEmployeeDto } from './dto/update-employee.dto';
 
 @Injectable()
@@ -14,8 +21,13 @@ export class EmployeesService {
     private readonly employeesRepository: Repository<EmployeeEntity>,
   ) {}
 
-  async list(query: ListEmployeesQueryDto) {
-    const where = typeof query.isActive === 'boolean' ? { isActive: query.isActive } : undefined;
+  async list(query: ListEmployeesQueryDto, tenantId: number) {
+    const where = {
+      tenantId,
+      ...(typeof query.isActive === 'boolean'
+        ? { isActive: query.isActive }
+        : {}),
+    };
 
     const [data, totalItems] = await this.employeesRepository.findAndCount({
       where,
@@ -36,17 +48,20 @@ export class EmployeesService {
     });
   }
 
-  async getById(id: number) {
-    const employee = await this.employeesRepository.findOne({ where: { id } });
+  async getById(id: number, tenantId: number) {
+    const employee = await this.employeesRepository.findOne({
+      where: { id, tenantId },
+    });
     if (!employee) {
       throw new NotFoundException('Empleado no encontrado');
     }
     return employee;
   }
 
-  async create(payload: CreateEmployeeDto) {
+  async create(payload: CreateEmployeeDto, tenantId: number) {
     const existing = await this.employeesRepository.findOne({
       where: {
+        tenantId,
         documentType: payload.documentType,
         documentNumber: payload.documentNumber,
       },
@@ -58,20 +73,28 @@ export class EmployeesService {
 
     const entity = this.employeesRepository.create({
       ...payload,
+      tenantId,
       isActive: payload.isActive ?? true,
     });
 
     return this.employeesRepository.save(entity);
   }
 
-  async update(id: number, payload: UpdateEmployeeDto) {
-    const employee = await this.getById(id);
+  async update(id: number, payload: UpdateEmployeeDto, tenantId: number) {
+    const employee = await this.getById(id, tenantId);
+    const nextDocumentType = payload.documentType ?? employee.documentType;
+    const nextDocumentNumber =
+      payload.documentNumber ?? employee.documentNumber;
 
-    if (payload.documentType && payload.documentNumber) {
+    if (
+      nextDocumentType !== employee.documentType ||
+      nextDocumentNumber !== employee.documentNumber
+    ) {
       const duplicated = await this.employeesRepository.findOne({
         where: {
-          documentType: payload.documentType,
-          documentNumber: payload.documentNumber,
+          tenantId,
+          documentType: nextDocumentType,
+          documentNumber: nextDocumentNumber,
         },
       });
 

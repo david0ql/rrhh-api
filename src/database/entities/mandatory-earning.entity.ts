@@ -1,4 +1,10 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { decimalTransformer } from '../transformers/decimal.transformer';
 
 @Entity({ name: 'mandatory_earnings' })
@@ -18,7 +24,12 @@ export class MandatoryEarningEntity {
   })
   monthlyAmount!: number;
 
-  @Column({ name: 'legal_reference', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'legal_reference',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   legalReference!: string | null;
 
   @Column({ name: 'is_active', type: 'tinyint', width: 1, default: () => '1' })

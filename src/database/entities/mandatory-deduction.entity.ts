@@ -1,4 +1,10 @@
-import { Column, CreateDateColumn, Entity, PrimaryColumn, UpdateDateColumn } from 'typeorm';
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import { decimalTransformer } from '../transformers/decimal.transformer';
 
 @Entity({ name: 'mandatory_deductions' })
@@ -9,13 +15,30 @@ export class MandatoryDeductionEntity {
   @Column({ type: 'varchar', length: 100 })
   name!: string;
 
-  @Column({ name: 'employee_rate', type: 'decimal', precision: 5, scale: 2, transformer: decimalTransformer })
+  @Column({
+    name: 'employee_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   employeeRate!: number;
 
-  @Column({ name: 'employer_rate', type: 'decimal', precision: 5, scale: 2, transformer: decimalTransformer })
+  @Column({
+    name: 'employer_rate',
+    type: 'decimal',
+    precision: 5,
+    scale: 2,
+    transformer: decimalTransformer,
+  })
   employerRate!: number;
 
-  @Column({ name: 'legal_reference', type: 'varchar', length: 255, nullable: true })
+  @Column({
+    name: 'legal_reference',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
   legalReference!: string | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: () => '1' })

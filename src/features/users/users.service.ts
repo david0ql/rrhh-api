@@ -34,7 +34,8 @@ export class UsersService {
     const nextAttempts = previousAttempts + 1;
     await this.usersRepository.update(userId, {
       failedLoginAttempts: nextAttempts,
-      lockedUntil: nextAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
+      lockedUntil:
+        nextAttempts >= 5 ? new Date(Date.now() + 15 * 60 * 1000) : null,
     });
   }
 

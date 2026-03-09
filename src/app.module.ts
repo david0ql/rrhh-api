@@ -8,6 +8,7 @@ import { EmployeesModule } from './features/employees/employees.module';
 import { HealthModule } from './features/health/health.module';
 import { LoansModule } from './features/loans/loans.module';
 import { PayrollModule } from './features/payroll/payroll.module';
+import { TenantsModule } from './features/tenants/tenants.module';
 import { UsersModule } from './features/users/users.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { UsersModule } from './features/users/users.module';
     UsersModule,
     AuthModule,
     DashboardModule,
+    TenantsModule,
     EmployeesModule,
     PayrollModule,
     LoansModule,
