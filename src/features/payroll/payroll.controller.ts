@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Param,
+  Patch,
   Post,
   Query,
   StreamableFile,
@@ -14,6 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentTenant } from '../tenants/current-tenant.decorator';
 import { TenantGuard } from '../tenants/tenant.guard';
 import { CreatePayrollDto } from './dto/create-payroll.dto';
+import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import { DownloadPayrollZipDto } from './dto/download-payroll-zip.dto';
 import { ListPayrollQueryDto } from './dto/list-payroll-query.dto';
 import { SendPayrollEmailDto } from './dto/send-payroll-email.dto';
@@ -43,6 +45,23 @@ export class PayrollController {
     @Body() body: CreatePayrollDto,
   ) {
     return this.payrollService.create(body, tenant.id);
+  }
+
+  @Get(':id')
+  findOne(
+    @CurrentTenant() tenant: TenantEntity,
+    @Param('id') id: string,
+  ) {
+    return this.payrollService.findOne(Number(id), tenant.id);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentTenant() tenant: TenantEntity,
+    @Param('id') id: string,
+    @Body() body: UpdatePayrollDto,
+  ) {
+    return this.payrollService.update(Number(id), body, tenant.id);
   }
 
   @Post(':id/send-email')

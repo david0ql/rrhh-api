@@ -23,6 +23,7 @@ import {
 import { getSkip, toPaginatedResponse } from '../../shared/pagination';
 import { buildPayrollPdfBuffer } from './payroll-pdf.builder';
 import { CreatePayrollDto } from './dto/create-payroll.dto';
+import { UpdatePayrollDto } from './dto/update-payroll.dto';
 import {
   ListPayrollQueryDto,
   PayrollOrderBy,
@@ -310,6 +311,132 @@ export class PayrollService {
       ...this.serializePayroll(payroll),
       emailDispatch,
     };
+  }
+
+  async findOne(id: number, tenantId: number) {
+    const payroll = await this.findPayrollOrFail(id, tenantId, ['employee']);
+    return this.serializePayroll(payroll);
+  }
+
+  async update(id: number, payload: UpdatePayrollDto, tenantId: number) {
+    const payroll = await this.findPayrollOrFail(id, tenantId, [
+      'employee',
+      'tenant',
+      'loanPayments',
+    ]);
+
+    const contributionBase = payload.earnedSalary + payload.earnedExtras;
+
+    const mandatoryDeductions = await this.mandatoryDeductionsRepository.find({
+      where: [
+        { code: 'SALUD', isActive: true },
+        { code: 'PENSION', isActive: true },
+      ],
+    });
+    const salud = mandatoryDeductions.find((d) => d.code === 'SALUD');
+    const pension = mandatoryDeductions.find((d) => d.code === 'PENSION');
+    if (!salud || !pension) {
+      throw new BadRequestException(
+        'No están configuradas las deducciones obligatorias de salud y pensión',
+      );
+    }
+
+    const healthEmployeeRate = Number(salud.employeeRate);
+    const healthEmployerRate = Number(salud.employerRate);
+    const pensionEmployeeRate = Number(pension.employeeRate);
+    const pensionEmployerRate = Number(pension.employerRate);
+
+    const deductionHealth = this.roundMoney(
+      (contributionBase * healthEmployeeRate) / 100,
+    );
+    const deductionPension = this.roundMoney(
+      (contributionBase * pensionEmployeeRate) / 100,
+    );
+
+    const {
+      minimumWageMonthly,
+      transportAllowanceMonthly,
+      transportAllowanceDaily,
+      transportAllowanceSalaryLimit,
+    } = await this.loadPayrollConfig();
+
+    const workedDaysForAllowance = Math.max(
+      0,
+      Math.min(30, Number(payload.daysWorked)),
+    );
+    const appliesTransportAllowance =
+      Number(payload.earnedSalary) <= transportAllowanceSalaryLimit;
+    const earnedTransportAllowance = appliesTransportAllowance
+      ? this.roundMoney(transportAllowanceDaily * workedDaysForAllowance)
+      : 0;
+
+    const totalEarnings = contributionBase + earnedTransportAllowance;
+    const totalDeductions =
+      deductionHealth +
+      deductionPension +
+      payload.deductionLoan +
+      payload.deductionOther;
+
+    // Update payroll fields
+    payroll.paymentDate = payload.paymentDate ?? null;
+    payroll.daysWorked = payload.daysWorked;
+    payroll.earnedSalary = payload.earnedSalary;
+    payroll.earnedExtras = payload.earnedExtras;
+    payroll.deductionLoan = payload.deductionLoan;
+    payroll.deductionOther = payload.deductionOther;
+    payroll.notes = payload.notes ?? null;
+    payroll.deductionHealth = deductionHealth;
+    payroll.deductionPension = deductionPension;
+    payroll.healthEmployeeRate = healthEmployeeRate;
+    payroll.healthEmployerRate = healthEmployerRate;
+    payroll.pensionEmployeeRate = pensionEmployeeRate;
+    payroll.pensionEmployerRate = pensionEmployerRate;
+    payroll.earnedTransportAllowance = earnedTransportAllowance;
+    payroll.transportAllowanceMonthly = transportAllowanceMonthly;
+    payroll.transportAllowanceDaily = transportAllowanceDaily;
+    payroll.minimumWageMonthly = minimumWageMonthly;
+    payroll.totalEarnings = totalEarnings;
+    payroll.totalDeductions = totalDeductions;
+    payroll.netPay = totalEarnings - totalDeductions;
+
+    await this.payrollRepository.save(payroll);
+
+    // Sync linked NOMINA loan payment if deductionLoan changed
+    const linkedPayment = payroll.loanPayments?.find(
+      (p) => p.source === 'NOMINA',
+    );
+    if (linkedPayment) {
+      const oldAmount = Number(linkedPayment.amount);
+      const newAmount = payload.deductionLoan;
+      if (oldAmount !== newAmount) {
+        const loan = await this.loansRepository.findOne({
+          where: { id: linkedPayment.loanId, tenantId },
+        });
+        if (loan) {
+          loan.paidAmount = Math.max(
+            0,
+            Number(loan.paidAmount) - oldAmount + newAmount,
+          );
+          loan.balance = Math.max(
+            0,
+            Number(loan.principalAmount) - loan.paidAmount,
+          );
+          loan.status = loan.balance === 0 ? 'PAGADO' : 'ACTIVO';
+          await this.loansRepository.save(loan);
+        }
+        linkedPayment.amount = newAmount;
+        if (payload.paymentDate) {
+          linkedPayment.paymentDate = payload.paymentDate;
+        }
+        await this.loanPaymentsRepository.save(linkedPayment);
+      }
+    }
+
+    const updated = await this.findPayrollOrFail(id, tenantId, [
+      'employee',
+      'tenant',
+    ]);
+    return this.serializePayroll(updated);
   }
 
   async sendPayrollEmail(
