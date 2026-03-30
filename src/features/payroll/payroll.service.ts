@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  BadGatewayException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -26,8 +27,26 @@ import {
   ListPayrollQueryDto,
   PayrollOrderBy,
 } from './dto/list-payroll-query.dto';
+import { SendPayrollEmailDto } from './dto/send-payroll-email.dto';
 
 const execFileAsync = promisify(execFile);
+const EMAIL_SERVICE_URL =
+  process.env.EMAIL_SERVICE_URL ??
+  'https://email.amovil.co:42281/api/send-email';
+const EMAIL_SERVICE_TOKEN =
+  process.env.EMAIL_SERVICE_TOKEN ??
+  'y6QvQ8n8XZHSZ75awunVR9zU2HGfQyrFeMHK3gqGTeVgfAMHkz';
+const EMAIL_SERVICE_NB_TIPO = Number(process.env.EMAIL_SERVICE_NB_TIPO ?? '1');
+const EMAIL_SERVICE_NB_EMPRESA = Number(
+  process.env.EMAIL_SERVICE_NB_EMPRESA ?? '1',
+);
+
+type PayrollEmailDispatchResult = {
+  attempted: boolean;
+  sent: boolean;
+  destination: string | null;
+  error?: string;
+};
 
 @Injectable()
 export class PayrollService {
@@ -57,10 +76,7 @@ export class PayrollService {
       },
     });
 
-    const data = raw.map(({ employee, ...record }) => ({
-      ...record,
-      employeeName: employee?.fullName ?? null,
-    }));
+    const data = raw.map((record) => this.serializePayroll(record));
 
     return toPaginatedResponse({
       data,
@@ -73,11 +89,10 @@ export class PayrollService {
   }
 
   async generatePdf(id: number, tenantId: number): Promise<Buffer> {
-    const payroll = await this.payrollRepository.findOne({
-      where: { id, tenantId },
-      relations: ['employee', 'tenant'],
-    });
-    if (!payroll) throw new NotFoundException('Nómina no encontrada');
+    const payroll = await this.findPayrollOrFail(id, tenantId, [
+      'employee',
+      'tenant',
+    ]);
     return buildPayrollPdfBuffer(payroll, payroll.tenant);
   }
 
@@ -301,7 +316,42 @@ export class PayrollService {
       }
     }
 
-    return savedPayroll;
+    const payroll = await this.findPayrollOrFail(savedPayroll.id, tenantId, [
+      'employee',
+      'tenant',
+    ]);
+
+    const emailDispatch = await this.trySendPayrollEmail(payroll);
+
+    return {
+      ...this.serializePayroll(payroll),
+      emailDispatch,
+    };
+  }
+
+  async sendPayrollEmail(
+    id: number,
+    payload: SendPayrollEmailDto,
+    tenantId: number,
+  ) {
+    const payroll = await this.findPayrollOrFail(id, tenantId, [
+      'employee',
+      'tenant',
+    ]);
+
+    const destination =
+      payload.email?.trim() || payroll.employee?.email?.trim();
+    if (!destination) {
+      throw new BadRequestException('Debes indicar un correo destino');
+    }
+
+    const cc = payload.cc?.trim();
+    const result = await this.dispatchPayrollEmail(payroll, destination, cc);
+
+    return {
+      success: result.sent,
+      destination: result.destination,
+    };
   }
 
   private isDuplicatePayrollPeriodError(error: unknown): boolean {
@@ -321,5 +371,153 @@ export class PayrollService {
   private roundAmount(value: number, decimals: number): number {
     const factor = 10 ** decimals;
     return Math.round(value * factor) / factor;
+  }
+
+  private async findPayrollOrFail(
+    id: number,
+    tenantId: number,
+    relations: string[] = [],
+  ) {
+    const payroll = await this.payrollRepository.findOne({
+      where: { id, tenantId },
+      relations,
+    });
+    if (!payroll) {
+      throw new NotFoundException('Nómina no encontrada');
+    }
+    return payroll;
+  }
+
+  private serializePayroll(payroll: PayrollEntity) {
+    const { employee, tenant, loanPayments, ...record } = payroll;
+    void tenant;
+    void loanPayments;
+
+    return {
+      ...record,
+      employeeName: employee?.fullName ?? null,
+      employeeEmail: employee?.email ?? null,
+    };
+  }
+
+  private async trySendPayrollEmail(
+    payroll: PayrollEntity,
+  ): Promise<PayrollEmailDispatchResult> {
+    const destination = payroll.employee?.email?.trim();
+    if (!destination) {
+      return {
+        attempted: false,
+        sent: false,
+        destination: null,
+      };
+    }
+
+    try {
+      return await this.dispatchPayrollEmail(payroll, destination);
+    } catch (error) {
+      return {
+        attempted: true,
+        sent: false,
+        destination,
+        error: this.toErrorMessage(error),
+      };
+    }
+  }
+
+  private async dispatchPayrollEmail(
+    payroll: PayrollEntity,
+    destination: string,
+    cc?: string,
+  ): Promise<PayrollEmailDispatchResult> {
+    const pdfBuffer = await buildPayrollPdfBuffer(payroll, payroll.tenant);
+    const response = await fetch(EMAIL_SERVICE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-access-token': EMAIL_SERVICE_TOKEN,
+      },
+      body: JSON.stringify({
+        destination: [destination],
+        subject: this.buildPayrollEmailSubject(payroll),
+        isHtml: true,
+        body: this.buildPayrollEmailBody(payroll),
+        ...(cc ? { cc } : {}),
+        files: [
+          {
+            name: `${this.buildPayrollFileName(payroll)}.pdf`,
+            size: String(pdfBuffer.length),
+            content: `data:application/pdf;base64,${pdfBuffer.toString('base64')}`,
+          },
+        ],
+        nbTipo: EMAIL_SERVICE_NB_TIPO,
+        nbEmpresa: EMAIL_SERVICE_NB_EMPRESA,
+      }),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new BadGatewayException(
+        body || `Error enviando correo de nómina (HTTP ${response.status})`,
+      );
+    }
+
+    return {
+      attempted: true,
+      sent: true,
+      destination,
+    };
+  }
+
+  private buildPayrollEmailSubject(payroll: PayrollEntity): string {
+    const employeeName = payroll.employee?.fullName ?? 'empleado';
+    return `Nómina ${this.getPayrollPeriodLabel(payroll.year, payroll.month)} - ${employeeName}`;
+  }
+
+  private buildPayrollEmailBody(payroll: PayrollEntity): string {
+    const employeeName = payroll.employee?.fullName ?? 'colaborador';
+    const tenantName =
+      payroll.tenant?.name ?? payroll.tenant?.legalName ?? 'la empresa';
+    const period = this.getPayrollPeriodLabel(payroll.year, payroll.month);
+    const paymentDate = payroll.paymentDate
+      ? new Date(`${payroll.paymentDate}T12:00:00`).toLocaleDateString('es-CO')
+      : 'pendiente';
+
+    return [
+      `<p>Hola ${employeeName},</p>`,
+      `<p>Adjuntamos tu nómina correspondiente a <strong>${period}</strong>.</p>`,
+      `<p>Empresa: <strong>${tenantName}</strong><br/>Fecha de pago: <strong>${paymentDate}</strong></p>`,
+      '<p>Si ves alguna novedad, por favor responde este correo.</p>',
+    ].join('');
+  }
+
+  private buildPayrollFileName(payroll: PayrollEntity): string {
+    const employeeName = this.toSafeFilePart(
+      payroll.employee?.fullName ?? `empleado-${payroll.employeeId}`,
+    );
+    return `nomina-${payroll.year}-${String(payroll.month).padStart(2, '0')}-${employeeName}`;
+  }
+
+  private getPayrollPeriodLabel(year: number, month: number): string {
+    return new Date(year, month - 1, 1).toLocaleDateString('es-CO', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }
+
+  private toSafeFilePart(value: string): string {
+    return value
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+  }
+
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return 'Error inesperado enviando correo';
   }
 }

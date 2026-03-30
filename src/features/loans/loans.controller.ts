@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { TenantEntity } from '../../database/entities';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentTenant } from '../tenants/current-tenant.decorator';
@@ -7,6 +16,7 @@ import { CreateLoanPaymentDto } from './dto/create-loan-payment.dto';
 import { CreateLoanDto } from './dto/create-loan.dto';
 import { ListLoanPaymentsQueryDto } from './dto/list-loan-payments-query.dto';
 import { ListLoansQueryDto } from './dto/list-loans-query.dto';
+import { UpdateLoanDto } from './dto/update-loan.dto';
 import { LoansService } from './loans.service';
 
 @Controller('loans')
@@ -36,6 +46,20 @@ export class LoansController {
     @Body() body: CreateLoanDto,
   ) {
     return this.loansService.createLoan(body, tenant.id);
+  }
+
+  @Get(':id')
+  getLoan(@CurrentTenant() tenant: TenantEntity, @Param('id') id: string) {
+    return this.loansService.getLoan(Number(id), tenant.id);
+  }
+
+  @Patch(':id')
+  updateLoan(
+    @CurrentTenant() tenant: TenantEntity,
+    @Param('id') id: string,
+    @Body() body: UpdateLoanDto,
+  ) {
+    return this.loansService.updateLoan(Number(id), body, tenant.id);
   }
 
   @Post('payments')

@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Param,
   Post,
   Query,
@@ -15,6 +16,7 @@ import { TenantGuard } from '../tenants/tenant.guard';
 import { CreatePayrollDto } from './dto/create-payroll.dto';
 import { DownloadPayrollZipDto } from './dto/download-payroll-zip.dto';
 import { ListPayrollQueryDto } from './dto/list-payroll-query.dto';
+import { SendPayrollEmailDto } from './dto/send-payroll-email.dto';
 import { PayrollService } from './payroll.service';
 
 @Controller('payroll')
@@ -36,6 +38,16 @@ export class PayrollController {
     @Body() body: CreatePayrollDto,
   ) {
     return this.payrollService.create(body, tenant.id);
+  }
+
+  @Post(':id/send-email')
+  @HttpCode(200)
+  sendEmail(
+    @CurrentTenant() tenant: TenantEntity,
+    @Param('id') id: string,
+    @Body() body: SendPayrollEmailDto,
+  ) {
+    return this.payrollService.sendPayrollEmail(Number(id), body, tenant.id);
   }
 
   @Post('pdf/zip')

@@ -19,6 +19,7 @@ import {
   LoanPaymentOrderBy,
 } from './dto/list-loan-payments-query.dto';
 import { ListLoansQueryDto, LoanOrderBy } from './dto/list-loans-query.dto';
+import { UpdateLoanDto } from './dto/update-loan.dto';
 
 @Injectable()
 export class LoansService {
@@ -48,10 +49,7 @@ export class LoansService {
       },
     });
 
-    const data = raw.map(({ employee, ...loan }) => ({
-      ...loan,
-      employeeName: employee?.fullName ?? null,
-    }));
+    const data = raw.map((loan) => this.serializeLoan(loan));
 
     return toPaginatedResponse({
       data,
@@ -100,7 +98,75 @@ export class LoansService {
       status: 'ACTIVO',
     });
 
-    return this.loansRepository.save(entity);
+    const savedLoan = await this.loansRepository.save(entity);
+    return this.getLoan(savedLoan.id, tenantId);
+  }
+
+  async getLoan(id: number, tenantId: number) {
+    const loan = await this.findLoanOrFail(id, tenantId, ['employee']);
+    return this.serializeLoan(loan);
+  }
+
+  async updateLoan(id: number, payload: UpdateLoanDto, tenantId: number) {
+    const loan = await this.findLoanOrFail(id, tenantId);
+
+    if (
+      payload.employeeId !== undefined &&
+      Number(payload.employeeId) !== Number(loan.employeeId)
+    ) {
+      if (Number(loan.paidAmount) > 0) {
+        throw new BadRequestException(
+          'No puedes cambiar el empleado de un préstamo con abonos registrados',
+        );
+      }
+
+      const employee = await this.employeesRepository.findOne({
+        where: { id: payload.employeeId, tenantId },
+      });
+      if (!employee) {
+        throw new NotFoundException('Empleado no encontrado');
+      }
+
+      loan.employeeId = payload.employeeId;
+    }
+
+    if (payload.startDate !== undefined) {
+      loan.startDate = payload.startDate;
+    }
+
+    if (payload.principalAmount !== undefined) {
+      if (Number(payload.principalAmount) < Number(loan.paidAmount)) {
+        throw new BadRequestException(
+          'El capital no puede ser menor a lo ya abonado',
+        );
+      }
+
+      loan.principalAmount = payload.principalAmount;
+    }
+
+    if (payload.suggestedInstallmentAmount !== undefined) {
+      loan.suggestedInstallmentAmount =
+        Number(payload.suggestedInstallmentAmount) > 0
+          ? payload.suggestedInstallmentAmount
+          : null;
+    }
+
+    if (payload.notes !== undefined) {
+      loan.notes = payload.notes.trim() ? payload.notes.trim() : null;
+    }
+
+    loan.balance = Math.max(
+      0,
+      Number(loan.principalAmount) - Number(loan.paidAmount),
+    );
+
+    if (loan.status !== 'CANCELADO') {
+      loan.status = loan.balance === 0 ? 'PAGADO' : 'ACTIVO';
+    }
+
+    await this.loansRepository.save(loan);
+
+    return this.getLoan(loan.id, tenantId);
   }
 
   async registerPayment(payload: CreateLoanPaymentDto, tenantId: number) {
@@ -139,6 +205,33 @@ export class LoansService {
     return {
       loan: updatedLoan,
       payment: savedPayment,
+    };
+  }
+
+  private async findLoanOrFail(
+    id: number,
+    tenantId: number,
+    relations: string[] = [],
+  ) {
+    const loan = await this.loansRepository.findOne({
+      where: { id, tenantId },
+      relations,
+    });
+    if (!loan) {
+      throw new NotFoundException('Prestamo no encontrado');
+    }
+    return loan;
+  }
+
+  private serializeLoan(loan: LoanEntity) {
+    const { employee, payments, tenant, statusRef, ...record } = loan;
+    void payments;
+    void tenant;
+    void statusRef;
+
+    return {
+      ...record,
+      employeeName: employee?.fullName ?? null,
     };
   }
 }
