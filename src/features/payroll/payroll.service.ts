@@ -88,6 +88,10 @@ export class PayrollService {
     });
   }
 
+  async getPayrollConfig() {
+    return this.loadPayrollConfig();
+  }
+
   async generatePdf(id: number, tenantId: number): Promise<Buffer> {
     const payroll = await this.findPayrollOrFail(id, tenantId, [
       'employee',
@@ -197,37 +201,16 @@ export class PayrollService {
       (contributionBase * pensionEmployeeRate) / 100,
     );
 
-    const mandatoryEarnings = await this.mandatoryEarningsRepository.find({
-      where: [
-        { code: 'SALARIO_MINIMO_MENSUAL', isActive: true },
-        { code: 'AUXILIO_TRANSPORTE_MENSUAL', isActive: true },
-      ],
-    });
-    const minimumWageParam = mandatoryEarnings.find(
-      (e) => e.code === 'SALARIO_MINIMO_MENSUAL',
-    );
-    const transportAllowanceParam = mandatoryEarnings.find(
-      (e) => e.code === 'AUXILIO_TRANSPORTE_MENSUAL',
-    );
-    if (!minimumWageParam || !transportAllowanceParam) {
-      throw new BadRequestException(
-        'No están parametrizados SALARIO_MINIMO_MENSUAL y AUXILIO_TRANSPORTE_MENSUAL',
-      );
-    }
-
-    const minimumWageMonthly = Number(minimumWageParam.monthlyAmount);
-    const transportAllowanceMonthly = Number(
-      transportAllowanceParam.monthlyAmount,
-    );
-    const transportAllowanceDaily = this.roundAmount(
-      transportAllowanceMonthly / 30,
-      6,
-    );
+    const {
+      minimumWageMonthly,
+      transportAllowanceMonthly,
+      transportAllowanceDaily,
+      transportAllowanceSalaryLimit,
+    } = await this.loadPayrollConfig();
     const workedDaysForAllowance = Math.max(
       0,
       Math.min(30, Number(payload.daysWorked)),
     );
-    const transportAllowanceSalaryLimit = minimumWageMonthly * 2;
     const appliesTransportAllowance =
       Number(payload.earnedSalary) <= transportAllowanceSalaryLimit;
     const earnedTransportAllowance = appliesTransportAllowance
@@ -519,5 +502,41 @@ export class PayrollService {
     }
 
     return 'Error inesperado enviando correo';
+  }
+
+  private async loadPayrollConfig() {
+    const mandatoryEarnings = await this.mandatoryEarningsRepository.find({
+      where: [
+        { code: 'SALARIO_MINIMO_MENSUAL', isActive: true },
+        { code: 'AUXILIO_TRANSPORTE_MENSUAL', isActive: true },
+      ],
+    });
+    const minimumWageParam = mandatoryEarnings.find(
+      (e) => e.code === 'SALARIO_MINIMO_MENSUAL',
+    );
+    const transportAllowanceParam = mandatoryEarnings.find(
+      (e) => e.code === 'AUXILIO_TRANSPORTE_MENSUAL',
+    );
+    if (!minimumWageParam || !transportAllowanceParam) {
+      throw new BadRequestException(
+        'No están parametrizados SALARIO_MINIMO_MENSUAL y AUXILIO_TRANSPORTE_MENSUAL',
+      );
+    }
+
+    const minimumWageMonthly = Number(minimumWageParam.monthlyAmount);
+    const transportAllowanceMonthly = Number(
+      transportAllowanceParam.monthlyAmount,
+    );
+    const transportAllowanceDaily = this.roundAmount(
+      transportAllowanceMonthly / 30,
+      6,
+    );
+
+    return {
+      minimumWageMonthly,
+      transportAllowanceMonthly,
+      transportAllowanceDaily,
+      transportAllowanceSalaryLimit: minimumWageMonthly * 2,
+    };
   }
 }

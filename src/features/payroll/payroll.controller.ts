@@ -32,6 +32,11 @@ export class PayrollController {
     return this.payrollService.list(query, tenant.id);
   }
 
+  @Get('config')
+  getPayrollConfig() {
+    return this.payrollService.getPayrollConfig();
+  }
+
   @Post()
   create(
     @CurrentTenant() tenant: TenantEntity,
